@@ -1,10 +1,20 @@
 use clap::Parser;
 use color_eyre::eyre::Result;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-struct TreeDB {}
+enum Command {
+    /// Compile a tree-sitter grammar to a shared library for future use
+    CompileGrammar {
+        /// The name of the language
+        name: String,
 
-impl TreeDB {
+        /// The path to the source
+        path: PathBuf,
+    },
+}
+
+impl Command {
     fn run(&self) -> Result<()> {
         println!("{self:#?}");
 
@@ -15,7 +25,8 @@ impl TreeDB {
 fn main() {
     color_eyre::install().expect("could not install error handlers");
 
-    let opts = TreeDB::parse();
+    let opts = Command::parse();
+
     if let Err(err) = opts.run() {
         println!("{err:?}");
         std::process::exit(1);
