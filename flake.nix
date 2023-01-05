@@ -16,6 +16,7 @@
             pkgs.libiconv
             pkgs.rustfmt
             pkgs.clippy
+            pkgs.rust-analyzer
           ];
         };
       });
