@@ -39,7 +39,7 @@ fn main() {
     let opts = Command::parse();
 
     if let Err(err) = opts.run() {
-        println!("{err:?}");
+        eprintln!("{err:?}");
         std::process::exit(1);
     }
 }
