@@ -1,3 +1,10 @@
+use clap::Parser;
+
+#[derive(Debug, Parser)]
+struct Opts {}
+
 fn main() {
-    println!("Hello, world!");
+    let opts = Opts::parse();
+
+    println!("{opts:#?}");
 }
