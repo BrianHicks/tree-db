@@ -28,7 +28,7 @@ pub struct CompileGrammar {
     debug: bool,
 
     /// Optimization level. Corresponds roughly to clang's `-O` flag
-    /// (https://clang.llvm.org/docs/CommandGuide/clang.html#cmdoption-o0)
+    /// <https://clang.llvm.org/docs/CommandGuide/clang.html#cmdoption-o0>
     #[arg(short('O'), long, default_value = "2")]
     opt_level: u32,
 }
