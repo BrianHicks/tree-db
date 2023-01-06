@@ -1,4 +1,6 @@
 use color_eyre::eyre::{bail, Result, WrapErr};
+use cozo::NamedRows;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tracing::instrument;
 use tree_sitter::{Language, Parser};
@@ -26,11 +28,15 @@ pub struct IngestorConfig {
 #[derive(Debug)]
 pub struct Ingestor {
     config: IngestorConfig,
+    relations: BTreeMap<String, NamedRows>,
 }
 
 impl From<IngestorConfig> for Ingestor {
     fn from(config: IngestorConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            relations: BTreeMap::new(),
+        }
     }
 }
 
