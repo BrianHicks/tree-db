@@ -176,10 +176,6 @@ impl<'path> Ingestor<'path> {
 
         Ok(())
     }
-
-    fn ingest_node(&mut self, path: &Path, node: &Node) -> Result<()> {
-        Ok(())
-    }
 }
 
 struct IngestableNode<'path> {
