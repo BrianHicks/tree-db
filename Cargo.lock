@@ -1862,6 +1862,7 @@ dependencies = [
  "cozo",
  "guess_host_triple",
  "libloading",
+ "serde_json",
  "tracing",
  "tracing-error",
  "tracing-subscriber",

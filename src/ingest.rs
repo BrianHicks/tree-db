@@ -1,5 +1,8 @@
 use color_eyre::eyre::{bail, Result, WrapErr};
 use cozo::NamedRows;
+use serde_json::json;
+use serde_json::value::Value;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -50,6 +53,12 @@ impl IngestorConfig {
             edges = ingestor.edges.len(),
             "parsed all files"
         );
+
+        let db = self.empty_db().wrap_err("could not set up empty Cozo DB")?;
+
+        if let Err(err) = db.import_relations(ingestor.into()) {
+            bail!("{err:#?}");
+        };
 
         Ok(())
     }
@@ -107,6 +116,31 @@ impl IngestorConfig {
 
         bail!("could not find {search_name:?} in any included path")
     }
+
+    fn empty_db(&self) -> Result<cozo::Db<cozo::MemStorage>> {
+        let db = match cozo::new_cozo_mem() {
+            Ok(db) => db,
+            // Cozo uses miette for error handling. It looks pretty nice, but
+            // it can't be used with color_eyre. Might be worth switching over;
+            // they both seem fine and I don't intend tree-db to ever be used
+            // as a library (if I did, I'd be doing things in this_error or
+            // something similar already.)
+            Err(err) => bail!("{err:#?}"),
+        };
+
+        if let Err(err) = db.run_script(":create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}", BTreeMap::new()) {
+            bail!("{err:#?}")
+        }
+
+        if let Err(err) = db.run_script(
+            ":create edges { path: String, parent: Int, child: Int, field: String? }",
+            BTreeMap::new(),
+        ) {
+            bail!("{err:#?}")
+        }
+
+        Ok(db)
+    }
 }
 
 #[derive(Debug)]
@@ -129,15 +163,15 @@ impl<'path> Ingestor<'path> {
 
     #[instrument(skip(self))]
     fn ingest(&mut self, path: &'path Path) -> Result<()> {
-        let bytes =
-            std::fs::read(path).wrap_err_with(|| format!("could not read `{}`", path.display()))?;
+        let source = std::fs::read_to_string(path)
+            .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
 
         let mut parser = Parser::new();
         parser
             .set_language(self.language)
             .wrap_err("could not set parser language")?;
 
-        let tree = match parser.parse(&bytes, None) {
+        let tree = match parser.parse(&source, None) {
             Some(tree) => tree,
             None => bail!("internal error: parser did not return a tree"),
         };
@@ -157,7 +191,7 @@ impl<'path> Ingestor<'path> {
             }
 
             self.nodes.push(
-                IngestableNode::from(path, &node, &bytes)
+                IngestableNode::from(path, &node, &source)
                     .wrap_err("could not ingest a syntax node")?,
             );
 
@@ -177,13 +211,53 @@ impl<'path> Ingestor<'path> {
     }
 }
 
+impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
+    #[instrument(skip(ingestor))]
+    fn from(ingestor: Ingestor<'_>) -> Self {
+        Self::from([
+            (
+                "nodes".into(),
+                NamedRows {
+                    headers: vec![
+                        "path".into(),
+                        "id".into(),
+                        "kind".into(),
+                        "is_error".into(),
+                        "parent".into(),
+                        "source".into(),
+                        "start_byte".into(),
+                        "start_row".into(),
+                        "start_column".into(),
+                        "end_byte".into(),
+                        "end_row".into(),
+                        "end_column".into(),
+                    ],
+                    rows: ingestor.nodes.iter().map(|node| node.to_vec()).collect(),
+                },
+            ),
+            (
+                "edges".into(),
+                NamedRows {
+                    headers: vec![
+                        "path".into(),
+                        "parent".into(),
+                        "child".into(),
+                        "field".into(),
+                    ],
+                    rows: ingestor.edges.iter().map(|edge| edge.to_vec()).collect(),
+                },
+            ),
+        ])
+    }
+}
+
 struct IngestableNode<'path> {
     path: &'path Path,
     id: usize,
     kind: &'static str,
     is_error: bool,
     parent: Option<usize>,
-    source: Option<Vec<u8>>,
+    source: Option<String>,
 
     // location
     start_byte: usize,
@@ -195,11 +269,11 @@ struct IngestableNode<'path> {
 }
 
 impl<'path> IngestableNode<'path> {
-    fn from(path: &'path Path, node: &Node, all_source: &[u8]) -> Result<Self> {
+    fn from(path: &'path Path, node: &Node, all_source: &str) -> Result<Self> {
         let range = node.range();
         let source = if node.is_named() {
             Some(match all_source.get(range.start_byte..range.end_byte) {
-                Some(source) => source.to_vec(),
+                Some(source) => source.to_string(),
                 None => bail!(
                     "didn't have enough bytes ({}) for the source range ({}–{})",
                     all_source.len(),
@@ -228,6 +302,23 @@ impl<'path> IngestableNode<'path> {
             end_column: range.end_point.column,
         })
     }
+
+    fn to_vec(&self) -> Vec<Value> {
+        vec![
+            json!(self.path),
+            json!(self.id),
+            json!(self.kind),
+            json!(self.is_error),
+            json!(self.parent),
+            json!(self.source),
+            json!(self.start_byte),
+            json!(self.start_row),
+            json!(self.start_column),
+            json!(self.end_byte),
+            json!(self.end_row),
+            json!(self.end_column),
+        ]
+    }
 }
 
 impl Debug for IngestableNode<'_> {
@@ -245,10 +336,7 @@ impl Debug for IngestableNode<'_> {
         }
 
         if let Some(source) = &self.source {
-            builder.field(
-                "source",
-                &core::str::from_utf8(source).unwrap_or("<invalid utf-8>"),
-            );
+            builder.field("source", source);
         }
 
         builder
@@ -265,4 +353,15 @@ struct IngestableEdge<'path> {
     parent: usize,
     child: usize,
     field: Option<&'static str>,
+}
+
+impl IngestableEdge<'_> {
+    fn to_vec(&self) -> Vec<Value> {
+        vec![
+            json!(self.path),
+            json!(self.parent),
+            json!(self.child),
+            json!(self.field),
+        ]
+    }
 }
