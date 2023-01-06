@@ -37,6 +37,9 @@ impl IngestorConfig {
 
         let mut ingestor = Ingestor::new(language);
 
+        // TODO: this could be in parallel pretty easily. Buncha threads, each
+        // with an ingestor. Make a way to combine ingestors (appending the
+        // interior lists should be fine) and we're good to go.
         for path in &self.file {
             ingestor
                 .ingest(&path)
