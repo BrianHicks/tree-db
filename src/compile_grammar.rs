@@ -35,10 +35,10 @@ pub struct CompileGrammar {
 
 // TODO: Windows support should be possible, but I'm not sure how to do it right now
 #[cfg(all(unix, not(target_os = "macos")))]
-static DYLIB_EXTENSION: &str = "so";
+pub static DYLIB_EXTENSION: &str = "so";
 
 #[cfg(target_os = "macos")]
-static DYLIB_EXTENSION: &str = "dylib";
+pub static DYLIB_EXTENSION: &str = "dylib";
 
 impl CompileGrammar {
     #[instrument]
