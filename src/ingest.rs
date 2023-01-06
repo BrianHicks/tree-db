@@ -43,7 +43,11 @@ impl IngestorConfig {
                 .wrap_err_with(|| format!("could not process `{}`", path.display()))?;
         }
 
-        println!("{ingestor:#?}");
+        tracing::info!(
+            nodes = ingestor.nodes.len(),
+            edges = ingestor.edges.len(),
+            "parsed all files"
+        );
 
         Ok(())
     }
