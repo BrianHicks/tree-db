@@ -120,8 +120,8 @@ impl<'path> Ingestor<'path> {
             language,
             // TODO: these capacities are really a shot in the dark. It's
             // probably worth measuring what's typical and then adjusting them.
-            nodes: Vec::with_capacity(2 ^ 6),
-            edges: Vec::with_capacity(2 ^ 6),
+            nodes: Vec::with_capacity(2 ^ 10),
+            edges: Vec::with_capacity(2 ^ 10),
         }
     }
 
