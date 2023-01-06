@@ -11,17 +11,17 @@ mod ingest;
 #[derive(Debug, Parser)]
 enum Command {
     /// Turn a source tree into a Cozo database file
-    Ingest(ingest::Ingest),
+    Ingest(ingest::IngestorConfig),
 
     /// Compile a tree-sitter grammar to a shared library for future use
     CompileGrammar(compile_grammar::CompileGrammar),
 }
 
 impl Command {
-    fn run(&self) -> Result<()> {
+    fn run(self) -> Result<()> {
         match self {
             Self::CompileGrammar(cg) => cg.run(),
-            Self::Ingest(i) => i.run(),
+            Self::Ingest(config) => ingest::Ingestor::from(config).run(),
         }
     }
 }

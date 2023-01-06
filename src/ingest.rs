@@ -4,7 +4,7 @@ use tracing::instrument;
 use tree_sitter::{Language, Parser};
 
 #[derive(Debug, clap::Parser)]
-pub struct Ingest {
+pub struct IngestorConfig {
     /// Which languages should we include?
     #[arg(short('l'), long)]
     language: String,
@@ -23,16 +23,27 @@ pub struct Ingest {
     file: Vec<PathBuf>,
 }
 
-impl Ingest {
+#[derive(Debug)]
+pub struct Ingestor {
+    config: IngestorConfig,
+}
+
+impl From<IngestorConfig> for Ingestor {
+    fn from(config: IngestorConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Ingestor {
     #[instrument]
     pub fn run(&self) -> Result<()> {
         let mut parser = self
-            .parser_for(&self.language)
+            .parser_for(&self.config.language)
             .wrap_err("could not find language")?;
 
         println!("{:#?}", parser.language());
 
-        for path in &self.file {
+        for path in &self.config.file {
             let source = std::fs::read_to_string(&path)
                 .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
 
@@ -93,7 +104,7 @@ impl Ingest {
             crate::compile_grammar::DYLIB_EXTENSION
         ));
 
-        for path in &self.include {
+        for path in &self.config.include {
             let candidate = path.join(&search_name);
             if candidate.exists() {
                 return Ok(candidate);
