@@ -32,6 +32,8 @@
             pkgs.rust-analyzer
 
             vendor-languages
+          ] ++ pkgs.lib.optional pkgs.stdenv.isDarwin [
+            pkgs.darwin.apple_sdk.frameworks.Security
           ];
         };
       });
