@@ -43,31 +43,25 @@ impl From<IngestorConfig> for Ingestor {
 impl Ingestor {
     #[instrument]
     pub fn run(&self) -> Result<()> {
-        let mut parser = self
-            .parser_for(&self.config.language)
+        let language = self
+            .language_for(&self.config.language)
             .wrap_err("could not find language")?;
 
-        println!("{:#?}", parser.language());
+        println!("{:#?}", language);
 
         for path in &self.config.file {
-            let source = std::fs::read_to_string(&path)
-                .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
-
-            let tree = parser.parse(source, None);
-            println!("{tree:#?}");
+            println!("{path:#?}");
         }
 
         Ok(())
     }
 
-    fn parser_for(&self, language_name: &str) -> Result<Parser> {
+    fn language_for(&self, language_name: &str) -> Result<Language> {
         let grammar_path = self
             .find_grammar(language_name)
             .wrap_err("could not find grammar")?;
 
         let symbol_name = format!("tree_sitter_{language_name}");
-
-        let mut parser = Parser::new();
 
         let lib = unsafe { libloading::Library::new(&grammar_path) }.wrap_err_with(|| {
             format!(
@@ -76,7 +70,7 @@ impl Ingestor {
             )
         })?;
 
-        let lang = unsafe {
+        let language = unsafe {
             let lang_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> = lib
                 .get(symbol_name.as_bytes())
                 .wrap_err_with(|| format!("could not load language function `{}`", symbol_name))?;
@@ -96,11 +90,7 @@ impl Ingestor {
         // We'll see what we see, I guess.
         std::mem::forget(lib);
 
-        parser
-            .set_language(lang)
-            .wrap_err("could not set language")?;
-
-        Ok(parser)
+        Ok(language)
     }
 
     fn find_grammar(&self, name: &str) -> Result<PathBuf> {
