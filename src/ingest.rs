@@ -125,6 +125,7 @@ impl<'path> Ingestor<'path> {
         }
     }
 
+    #[instrument(skip(self))]
     fn ingest(&mut self, path: &'path Path) -> Result<()> {
         let bytes = std::fs::read(&path)
             .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
