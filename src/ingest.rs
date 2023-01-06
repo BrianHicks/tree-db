@@ -1,6 +1,5 @@
 use color_eyre::eyre::{bail, Result, WrapErr};
 use cozo::NamedRows;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -42,7 +41,7 @@ impl IngestorConfig {
         // interior lists should be fine) and we're good to go.
         for path in &self.file {
             ingestor
-                .ingest(&path)
+                .ingest(path)
                 .wrap_err_with(|| format!("could not process `{}`", path.display()))?;
         }
 
@@ -130,8 +129,8 @@ impl<'path> Ingestor<'path> {
 
     #[instrument(skip(self))]
     fn ingest(&mut self, path: &'path Path) -> Result<()> {
-        let bytes = std::fs::read(&path)
-            .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
+        let bytes =
+            std::fs::read(path).wrap_err_with(|| format!("could not read `{}`", path.display()))?;
 
         let mut parser = Parser::new();
         parser
@@ -158,7 +157,7 @@ impl<'path> Ingestor<'path> {
             }
 
             self.nodes.push(
-                IngestableNode::from(&path, &node, &bytes)
+                IngestableNode::from(path, &node, &bytes)
                     .wrap_err("could not ingest a syntax node")?,
             );
 
