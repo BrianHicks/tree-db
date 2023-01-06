@@ -21,7 +21,7 @@ impl Command {
     fn run(self) -> Result<()> {
         match self {
             Self::CompileGrammar(cg) => cg.run(),
-            Self::Ingest(config) => ingest::Ingestor::from(config).run(),
+            Self::Ingest(ic) => ic.run(),
         }
     }
 }
