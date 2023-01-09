@@ -60,6 +60,12 @@ impl IngestorConfig {
             bail!("{err:#?}");
         };
 
+        // TODO: how do we want output?
+        match db.export_relations(vec!["nodes", "edges"].drain(..)) {
+            Ok(relations) => println!("{relations:?}"),
+            Err(err) => bail!("{err:#?}"),
+        }
+
         Ok(())
     }
 
