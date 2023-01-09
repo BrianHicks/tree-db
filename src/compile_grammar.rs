@@ -43,7 +43,6 @@ pub static DYLIB_EXTENSION: &str = "dylib";
 impl CompileGrammar {
     #[instrument]
     pub fn run(&self) -> Result<()> {
-        // working command: clang -I vendor/tree-sitter-rust/src vendor/tree-sitter-rust/src/parser.c vendor/tree-sitter-rust/src/scanner.c -o thingy.so -shared -fpic -o2
         let mut builder = cc::Build::new();
 
         builder
