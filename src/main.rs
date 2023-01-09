@@ -29,7 +29,11 @@ impl Command {
 fn main() {
     let subscriber = tracing_subscriber::Registry::default()
         .with(ErrorLayer::default())
-        .with(tracing_subscriber::fmt::layer().with_span_events(FmtSpan::NEW))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_span_events(FmtSpan::NEW)
+                .with_writer(std::io::stderr),
+        )
         .with(
             EnvFilter::try_from_default_env()
                 // TODO: default to `info` eventually
