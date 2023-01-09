@@ -12,6 +12,9 @@ use tree_sitter::{Language, Parser};
 
 #[derive(Debug, clap::Parser)]
 pub struct IngestorConfig {
+    /// What format do you want the output in?
+    output: Output,
+
     /// Which languages should we include?
     #[arg(short('l'), long)]
     language: String,
@@ -26,13 +29,42 @@ pub struct IngestorConfig {
     )]
     include: Vec<PathBuf>,
 
+    #[arg(long, short('o'), required_if_eq("output", "sqlite"))]
+    output_path: Option<PathBuf>,
+
     /// The files to ingest
     file: Vec<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum Output {
+    /// Cozo relations, as JSON
+    Cozo,
+
+    /// The Cozo schema that we're assuming, as a query you can run to start
+    /// your own Cozo database.
+    CozoSchema,
+
+    /// A SQLite database, as a file
+    Sqlite,
+}
+
+static NODES_SCHEMA: &str =
+    ":create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}";
+
+static EDGES_SCHEMA: &str =
+    ":create edges { path: String, parent: Int, child: Int, field: String? }";
+
 impl IngestorConfig {
     #[instrument]
     pub fn run(&self) -> Result<()> {
+        // TODO: this is a little hacky, and probably means this big `run`
+        // method should be refactored
+        if self.output == Output::CozoSchema {
+            println!("{}\n\n{}", NODES_SCHEMA, EDGES_SCHEMA);
+            return Ok(());
+        }
+
         let language = self
             .language_for(&self.language)
             .wrap_err("could not find language")?;
@@ -60,13 +92,29 @@ impl IngestorConfig {
             bail!("{err:#?}");
         };
 
-        // TODO: how do we want output?
-        match db.export_relations(vec!["nodes", "edges"].drain(..)) {
-            Ok(relations) => println!("{relations:?}"),
-            Err(err) => bail!("{err:#?}"),
+        match self.output {
+            Output::Cozo => match db.export_relations(vec!["nodes", "edges"].drain(..)) {
+                Ok(relations) => {
+                    println!("{relations:?}");
+                    Ok(())
+                }
+                Err(err) => bail!("{err:#?}"),
+            },
+            Output::CozoSchema => Ok(()),
+            Output::Sqlite => match db.backup_db(
+                self.output_path
+                    .as_ref()
+                    .expect(
+                        "if output is sqlite, output path should have been required as an argument",
+                    )
+                    // hmm, it's a little weird that the Cozo API doesn't take a PathBuf...
+                    .display()
+                    .to_string(),
+            ) {
+                Ok(()) => Ok(()),
+                Err(err) => bail!("{err:#?}"),
+            },
         }
-
-        Ok(())
     }
 
     fn language_for(&self, language_name: &str) -> Result<Language> {
@@ -134,14 +182,11 @@ impl IngestorConfig {
             Err(err) => bail!("{err:#?}"),
         };
 
-        if let Err(err) = db.run_script(":create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}", BTreeMap::new()) {
+        if let Err(err) = db.run_script(NODES_SCHEMA, BTreeMap::new()) {
             bail!("{err:#?}")
         }
 
-        if let Err(err) = db.run_script(
-            ":create edges { path: String, parent: Int, child: Int, field: String? }",
-            BTreeMap::new(),
-        ) {
+        if let Err(err) = db.run_script(EDGES_SCHEMA, BTreeMap::new()) {
             bail!("{err:#?}")
         }
 
