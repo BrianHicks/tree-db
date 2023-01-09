@@ -4,6 +4,7 @@ use serde_json::json;
 use serde_json::value::Value;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use tracing::instrument;
@@ -61,8 +62,9 @@ impl IngestorConfig {
         // TODO: this is a little hacky, and probably means this big `run`
         // method should be refactored
         if self.output == Output::CozoSchema {
-            println!("{}\n\n{}", NODES_SCHEMA, EDGES_SCHEMA);
-            return Ok(());
+            return self
+                .write(&format!("{}\n\n{}\n", NODES_SCHEMA, EDGES_SCHEMA))
+                .context("could not write schema");
         }
 
         let language = self
@@ -95,8 +97,9 @@ impl IngestorConfig {
         match self.output {
             Output::Cozo => match db.export_relations(vec!["nodes", "edges"].drain(..)) {
                 Ok(relations) => {
-                    println!("{relations:?}");
-                    Ok(())
+                    let json =
+                        serde_json::to_string(&relations).wrap_err("could not export relations")?;
+                    self.write(&json).wrap_err("could not write output")
                 }
                 Err(err) => bail!("{err:#?}"),
             },
@@ -114,6 +117,16 @@ impl IngestorConfig {
                 Ok(()) => Ok(()),
                 Err(err) => bail!("{err:#?}"),
             },
+        }
+    }
+
+    fn write(&self, data: &str) -> Result<()> {
+        match &self.output_path {
+            None => std::io::stdout()
+                .write(data.as_bytes())
+                .map(|_| ())
+                .wrap_err("could not write to stdout"),
+            Some(path) => std::fs::write(path, data).wrap_err("could not write to output file"),
         }
     }
 
