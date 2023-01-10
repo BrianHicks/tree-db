@@ -57,7 +57,6 @@ static SCHEMA: &str = indoc::indoc! {"
         =>
         kind: String,
         is_error: Bool,
-        parent: Int?,
         source: String?,
     }}
 
@@ -357,7 +356,6 @@ struct IngestableNode<'path> {
     id: usize,
     kind: &'static str,
     is_error: bool,
-    parent: Option<usize>,
     source: Option<String>,
 }
 
@@ -383,7 +381,6 @@ impl<'path> IngestableNode<'path> {
             id: node.id(),
             kind: node.kind(),
             is_error: node.is_error(),
-            parent: node.parent().map(|node| node.id()),
             source,
         })
     }
@@ -394,7 +391,6 @@ impl<'path> IngestableNode<'path> {
             json!(self.id),
             json!(self.kind),
             json!(self.is_error),
-            json!(self.parent),
             json!(self.source),
         ]
     }
@@ -409,10 +405,6 @@ impl Debug for IngestableNode<'_> {
             .field("id", &self.id)
             .field("kind", &self.kind)
             .field("is_error", &self.is_error);
-
-        if let Some(parent) = &self.parent {
-            builder.field("parent", parent);
-        }
 
         if let Some(source) = &self.source {
             builder.field("source", source);
