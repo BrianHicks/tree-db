@@ -50,11 +50,8 @@ pub enum Output {
     Sqlite,
 }
 
-static NODES_SCHEMA: &str =
-    ":create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}";
-
-static EDGES_SCHEMA: &str =
-    ":create edges { path: String, parent: Int, child: Int, field: String? }";
+static SCHEMA: &str =
+    "{:create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}}\n{:create edges { path: String, parent: Int, child: Int, field: String? }}";
 
 impl IngestorConfig {
     #[instrument]
@@ -62,9 +59,7 @@ impl IngestorConfig {
         // TODO: this is a little hacky, and probably means this big `run`
         // method should be refactored
         if self.output == Output::CozoSchema {
-            return self
-                .write(&format!("{}\n\n{}\n", NODES_SCHEMA, EDGES_SCHEMA))
-                .context("could not write schema");
+            return self.write(SCHEMA).context("could not write schema");
         }
 
         let language = self
@@ -195,11 +190,7 @@ impl IngestorConfig {
             Err(err) => bail!("{err:#?}"),
         };
 
-        if let Err(err) = db.run_script(NODES_SCHEMA, BTreeMap::new()) {
-            bail!("{err:#?}")
-        }
-
-        if let Err(err) = db.run_script(EDGES_SCHEMA, BTreeMap::new()) {
+        if let Err(err) = db.run_script(SCHEMA, BTreeMap::new()) {
             bail!("{err:#?}")
         }
 
