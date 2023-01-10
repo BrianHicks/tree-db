@@ -94,28 +94,29 @@ impl ExporterConfig {
             .language_for(&self.language)
             .wrap_err("could not find language")?;
 
-        let mut exporter = Exporter::new(language);
-
         // TODO: this could be in parallel pretty easily. Buncha threads, each
         // with an exporter. Make a way to combine exporters (appending the
         // interior lists should be fine) and we're good to go.
-        for path in &self.file {
-            exporter
-                .slurp(path)
-                .wrap_err_with(|| format!("could not process `{}`", path.display()))?;
-        }
-
-        tracing::info!(
-            nodes = exporter.nodes.len(),
-            edges = exporter.edges.len(),
-            "parsed all files"
-        );
+        let mut exporters = self
+            .file
+            .iter()
+            .map(|path| {
+                let mut exporter = FileExporter::new(language, path);
+                exporter
+                    .slurp()
+                    .wrap_err_with(|| format!("could not export from `{}`", path.display()))?;
+                Ok(exporter)
+            })
+            .collect::<Result<Vec<FileExporter<'_>>>>()
+            .wrap_err("failed to parse files")?;
 
         let db = self.empty_db().wrap_err("could not set up empty Cozo DB")?;
 
-        if let Err(err) = db.import_relations(exporter.into()) {
-            bail!("{err:#?}");
-        };
+        for exporter in exporters.drain(..) {
+            if let Err(err) = db.import_relations(exporter.into()) {
+                bail!("{err:#?}");
+            };
+        }
 
         match self.output {
             Output::Cozo => {
@@ -229,17 +230,20 @@ impl ExporterConfig {
 }
 
 #[derive(Debug)]
-pub struct Exporter<'path> {
+pub struct FileExporter<'path> {
     language: Language,
+
+    path: &'path Path,
     nodes: Vec<ExportableNode<'path>>,
     locations: Vec<ExportableNodeLocation<'path>>,
     edges: Vec<ExportableEdge<'path>>,
 }
 
-impl<'path> Exporter<'path> {
-    fn new(language: Language) -> Self {
+impl<'path> FileExporter<'path> {
+    fn new(language: Language, path: &'path Path) -> Self {
         Self {
             language,
+            path,
             // TODO: these capacities are really a shot in the dark. It's
             // probably worth measuring what's typical and then adjusting them.
             nodes: Vec::with_capacity(2 ^ 10),
@@ -249,9 +253,9 @@ impl<'path> Exporter<'path> {
     }
 
     #[instrument(skip(self))]
-    fn slurp(&mut self, path: &'path Path) -> Result<()> {
-        let source = std::fs::read_to_string(path)
-            .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
+    fn slurp(&mut self) -> Result<()> {
+        let source = std::fs::read_to_string(self.path)
+            .wrap_err_with(|| format!("could not read `{}`", self.path.display()))?;
 
         let mut parser = Parser::new();
         parser
@@ -271,25 +275,25 @@ impl<'path> Exporter<'path> {
                 let range = node.range();
                 tracing::warn!(
                     "`{}` contains an error at {}:{}",
-                    path.display(),
+                    self.path.display(),
                     range.start_point.row,
                     range.start_point.column,
                 )
             }
 
             self.nodes.push(
-                ExportableNode::from(path, &node, &source)
+                ExportableNode::from(self.path, &node, &source)
                     .wrap_err("could not ingest a syntax node")?,
             );
 
             self.locations
-                .push(ExportableNodeLocation::from(path, &node));
+                .push(ExportableNodeLocation::from(self.path, &node));
 
             for (i, child) in node.children(&mut cursor).enumerate() {
                 todo.push(child);
 
                 self.edges.push(ExportableEdge {
-                    path,
+                    path: self.path,
                     parent: node.id(),
                     child: node.id(),
                     field: node.field_name_for_child(i as u32),
@@ -301,9 +305,9 @@ impl<'path> Exporter<'path> {
     }
 }
 
-impl From<Exporter<'_>> for BTreeMap<String, NamedRows> {
+impl From<FileExporter<'_>> for BTreeMap<String, NamedRows> {
     #[instrument(skip(exporter))]
-    fn from(exporter: Exporter<'_>) -> Self {
+    fn from(exporter: FileExporter<'_>) -> Self {
         Self::from([
             (
                 "nodes".into(),
