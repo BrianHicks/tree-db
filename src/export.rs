@@ -30,7 +30,7 @@ pub struct ExporterConfig {
     )]
     include: Vec<PathBuf>,
 
-    #[arg(long, short('o'), required_if_eq("output", "sqlite"))]
+    #[arg(long, short('o'), required_if_eq("output", "cozo-sqlite"))]
     output_path: Option<PathBuf>,
 
     /// The files to export
@@ -47,7 +47,7 @@ pub enum Output {
     CozoSchema,
 
     /// A SQLite database, as a file
-    Sqlite,
+    CozoSqlite,
 }
 
 static SCHEMA: &str = indoc::indoc! {"
@@ -129,7 +129,7 @@ impl ExporterConfig {
                 }
             }
             Output::CozoSchema => Ok(()),
-            Output::Sqlite => match db.backup_db(
+            Output::CozoSqlite => match db.backup_db(
                 self.output_path
                     .as_ref()
                     .expect(
