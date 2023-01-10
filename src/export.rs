@@ -86,12 +86,40 @@ static SCHEMA: &str = indoc::indoc! {"
 impl ExporterConfig {
     #[instrument]
     pub fn run(&self) -> Result<()> {
-        // TODO: this is a little hacky, and probably means this big `run`
-        // method should be refactored
-        if self.output == Output::CozoSchema {
-            return self.write(SCHEMA).context("could not write schema");
-        }
+        match self.output {
+            Output::Cozo => {
+                let db = self.slurp_all().wrap_err("failed to create database")?;
 
+                match db.export_relations(vec!["nodes", "node_locations", "edges"].drain(..)) {
+                    Ok(relations) => {
+                        let json = serde_json::to_string(&relations)
+                            .wrap_err("could not export relations")?;
+                        self.write(&json).wrap_err("could not write output")
+                    }
+                    Err(err) => bail!("{err:#?}"),
+                }
+            }
+            Output::CozoSchema => self.write(SCHEMA).context("could not write schema"),
+            Output::CozoSqlite => match self
+                .slurp_all()
+                .wrap_err("failed to create database")?
+                .backup_db(
+                self.output_path
+                    .as_ref()
+                    .expect(
+                        "if output is sqlite, output path should have been required as an argument",
+                    )
+                    // hmm, it's a little weird that the Cozo API doesn't take a PathBuf...
+                    .display()
+                    .to_string(),
+            ) {
+                Ok(()) => Ok(()),
+                Err(err) => bail!("{err:#?}"),
+            },
+        }
+    }
+
+    fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
         let language = self
             .language_for(&self.language)
             .wrap_err("could not find language")?;
@@ -117,32 +145,7 @@ impl ExporterConfig {
             };
         }
 
-        match self.output {
-            Output::Cozo => {
-                match db.export_relations(vec!["nodes", "node_locations", "edges"].drain(..)) {
-                    Ok(relations) => {
-                        let json = serde_json::to_string(&relations)
-                            .wrap_err("could not export relations")?;
-                        self.write(&json).wrap_err("could not write output")
-                    }
-                    Err(err) => bail!("{err:#?}"),
-                }
-            }
-            Output::CozoSchema => Ok(()),
-            Output::CozoSqlite => match db.backup_db(
-                self.output_path
-                    .as_ref()
-                    .expect(
-                        "if output is sqlite, output path should have been required as an argument",
-                    )
-                    // hmm, it's a little weird that the Cozo API doesn't take a PathBuf...
-                    .display()
-                    .to_string(),
-            ) {
-                Ok(()) => Ok(()),
-                Err(err) => bail!("{err:#?}"),
-            },
-        }
+        Ok(db)
     }
 
     fn write(&self, data: &str) -> Result<()> {
