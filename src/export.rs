@@ -4,6 +4,7 @@ use serde_json::json;
 use serde_json::value::Value;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
@@ -234,6 +235,8 @@ pub struct FileExporter<'path> {
     language: Language,
 
     path: &'path Path,
+    source: String,
+
     nodes: Vec<ExportableNode<'path>>,
     locations: Vec<ExportableNodeLocation<'path>>,
     edges: Vec<ExportableEdge<'path>>,
@@ -246,6 +249,7 @@ impl<'path> FileExporter<'path> {
             path,
             // TODO: these capacities are really a shot in the dark. It's
             // probably worth measuring what's typical and then adjusting them.
+            source: String::with_capacity(2 ^ 10),
             nodes: Vec::with_capacity(2 ^ 10),
             locations: Vec::with_capacity(2 ^ 10),
             edges: Vec::with_capacity(2 ^ 10),
@@ -254,15 +258,14 @@ impl<'path> FileExporter<'path> {
 
     #[instrument(skip(self))]
     fn slurp(&mut self) -> Result<()> {
-        let source = std::fs::read_to_string(self.path)
-            .wrap_err_with(|| format!("could not read `{}`", self.path.display()))?;
+        self.read_source().wrap_err("could not read source")?;
 
         let mut parser = Parser::new();
         parser
             .set_language(self.language)
             .wrap_err("could not set parser language")?;
 
-        let tree = match parser.parse(&source, None) {
+        let tree = match parser.parse(&self.source, None) {
             Some(tree) => tree,
             None => bail!("internal error: parser did not return a tree"),
         };
@@ -281,11 +284,7 @@ impl<'path> FileExporter<'path> {
                 )
             }
 
-            self.nodes.push(
-                ExportableNode::from(self.path, &node, &source)
-                    .wrap_err("could not ingest a syntax node")?,
-            );
-
+            self.nodes.push(ExportableNode::from(self.path, &node));
             self.locations
                 .push(ExportableNodeLocation::from(self.path, &node));
 
@@ -300,6 +299,16 @@ impl<'path> FileExporter<'path> {
                 })
             }
         }
+
+        Ok(())
+    }
+
+    fn read_source(&mut self) -> Result<()> {
+        let mut file = std::fs::File::open(&self.path)
+            .wrap_err_with(|| format!("could not open `{}`", self.path.display()))?;
+
+        file.read_to_string(&mut self.source)
+            .wrap_err_with(|| format!("could not read source file `{}`", self.path.display()))?;
 
         Ok(())
     }
@@ -319,7 +328,11 @@ impl From<FileExporter<'_>> for BTreeMap<String, NamedRows> {
                         "is_error".into(),
                         "source".into(),
                     ],
-                    rows: exporter.nodes.iter().map(|node| node.to_vec()).collect(),
+                    rows: exporter
+                        .nodes
+                        .iter()
+                        .map(|node| node.to_vec(&exporter.source))
+                        .collect(),
                 },
             ),
             (
@@ -360,42 +373,36 @@ struct ExportableNode<'path> {
     id: usize,
     kind: &'static str,
     is_error: bool,
-    source: Option<String>,
+    source_bytes: Option<(usize, usize)>,
 }
 
 impl<'path> ExportableNode<'path> {
-    fn from(path: &'path Path, node: &Node, all_source: &str) -> Result<Self> {
+    fn from(path: &'path Path, node: &Node) -> Self {
         let range = node.range();
-        let source = if node.is_named() {
-            Some(match all_source.get(range.start_byte..range.end_byte) {
-                Some(source) => source.to_string(),
-                None => bail!(
-                    "didn't have enough bytes ({}) for the source range ({}–{})",
-                    all_source.len(),
-                    range.start_byte,
-                    range.end_byte,
-                ),
-            })
+        let source_bytes = if node.is_named() {
+            Some((range.start_byte, range.end_byte))
         } else {
             None
         };
 
-        Ok(Self {
+        Self {
             path,
             id: node.id(),
             kind: node.kind(),
             is_error: node.is_error(),
-            source,
-        })
+            source_bytes,
+        }
     }
 
-    fn to_vec(&self) -> Vec<Value> {
+    fn to_vec(&self, source: &str) -> Vec<Value> {
         vec![
             json!(self.path),
             json!(self.id),
             json!(self.kind),
             json!(self.is_error),
-            json!(self.source),
+            json!(self
+                .source_bytes
+                .and_then(|(start, end)| source.get(start..end))),
         ]
     }
 }
