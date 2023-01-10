@@ -35,7 +35,8 @@ pub struct ExporterConfig {
     #[arg(long, short('o'), required_if_eq("output", "cozo-sqlite"))]
     output_path: Option<PathBuf>,
 
-    /// The files to export
+    /// Where to search for files. These can either be directories or files.
+    #[arg(default_value = ".")]
     file: Vec<PathBuf>,
 }
 
@@ -119,13 +120,37 @@ impl ExporterConfig {
         }
     }
 
+    fn files(&self) -> Result<Vec<PathBuf>> {
+        let mut builder = ignore::WalkBuilder::new(match self.file.get(0) {
+            Some(path) => path,
+            None => bail!("expected at least one path to search"),
+        });
+        self.file.iter().skip(1).for_each(|path| {
+            builder.add(path);
+        });
+
+        let mut out = Vec::with_capacity(self.file.len());
+        for entry_res in builder.build() {
+            let entry = entry_res?;
+
+            if let Some(ft) = entry.file_type() {
+                if ft.is_file() {
+                    out.push(entry.into_path())
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
     fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
         let language = self
             .language_for(&self.language)
             .wrap_err("could not find language")?;
 
-        let mut exporters = self
-            .file
+        let files = self.files().wrap_err("could not get files")?;
+
+        let mut exporters = files
             .par_iter()
             .map(|path| {
                 let mut exporter = FileExporter::new(language, path);
