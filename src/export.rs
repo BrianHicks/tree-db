@@ -1,5 +1,6 @@
 use color_eyre::eyre::{bail, Result, WrapErr};
 use cozo::NamedRows;
+use rayon::prelude::*;
 use serde_json::json;
 use serde_json::value::Value;
 use std::collections::BTreeMap;
@@ -95,12 +96,9 @@ impl ExporterConfig {
             .language_for(&self.language)
             .wrap_err("could not find language")?;
 
-        // TODO: this could be in parallel pretty easily. Buncha threads, each
-        // with an exporter. Make a way to combine exporters (appending the
-        // interior lists should be fine) and we're good to go.
         let mut exporters = self
             .file
-            .iter()
+            .par_iter()
             .map(|path| {
                 let mut exporter = FileExporter::new(language, path);
                 exporter

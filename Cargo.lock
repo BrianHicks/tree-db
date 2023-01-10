@@ -1869,6 +1869,7 @@ dependencies = [
  "guess_host_triple",
  "indoc",
  "libloading",
+ "rayon",
  "serde_json",
  "tracing",
  "tracing-error",
