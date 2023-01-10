@@ -53,12 +53,18 @@ pub enum Output {
 static SCHEMA: &str = indoc::indoc! {"
     {:create nodes {
         path: String,
-        id: Int
+        id: Int,
         =>
         kind: String,
         is_error: Bool,
         parent: Int?,
         source: String?,
+    }}
+
+    {:create node_locations {
+        path: String,
+        id: Int,
+        =>
         start_byte: Int,
         start_row: Int,
         start_column: Int,
@@ -113,14 +119,16 @@ impl IngestorConfig {
         };
 
         match self.output {
-            Output::Cozo => match db.export_relations(vec!["nodes", "edges"].drain(..)) {
-                Ok(relations) => {
-                    let json =
-                        serde_json::to_string(&relations).wrap_err("could not export relations")?;
-                    self.write(&json).wrap_err("could not write output")
+            Output::Cozo => {
+                match db.export_relations(vec!["nodes", "node_locations", "edges"].drain(..)) {
+                    Ok(relations) => {
+                        let json = serde_json::to_string(&relations)
+                            .wrap_err("could not export relations")?;
+                        self.write(&json).wrap_err("could not write output")
+                    }
+                    Err(err) => bail!("{err:#?}"),
                 }
-                Err(err) => bail!("{err:#?}"),
-            },
+            }
             Output::CozoSchema => Ok(()),
             Output::Sqlite => match db.backup_db(
                 self.output_path
@@ -225,6 +233,7 @@ impl IngestorConfig {
 pub struct Ingestor<'path> {
     language: Language,
     nodes: Vec<IngestableNode<'path>>,
+    locations: Vec<IngestableNodeLocation<'path>>,
     edges: Vec<IngestableEdge<'path>>,
 }
 
@@ -235,6 +244,7 @@ impl<'path> Ingestor<'path> {
             // TODO: these capacities are really a shot in the dark. It's
             // probably worth measuring what's typical and then adjusting them.
             nodes: Vec::with_capacity(2 ^ 10),
+            locations: Vec::with_capacity(2 ^ 10),
             edges: Vec::with_capacity(2 ^ 10),
         }
     }
@@ -273,6 +283,9 @@ impl<'path> Ingestor<'path> {
                     .wrap_err("could not ingest a syntax node")?,
             );
 
+            self.locations
+                .push(IngestableNodeLocation::from(path, &node));
+
             for (i, child) in node.children(&mut cursor).enumerate() {
                 todo.push(child);
 
@@ -303,6 +316,16 @@ impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
                         "is_error".into(),
                         "parent".into(),
                         "source".into(),
+                    ],
+                    rows: ingestor.nodes.iter().map(|node| node.to_vec()).collect(),
+                },
+            ),
+            (
+                "node_locations".into(),
+                NamedRows {
+                    headers: vec![
+                        "path".into(),
+                        "id".into(),
                         "start_byte".into(),
                         "start_row".into(),
                         "start_column".into(),
@@ -310,7 +333,7 @@ impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
                         "end_row".into(),
                         "end_column".into(),
                     ],
-                    rows: ingestor.nodes.iter().map(|node| node.to_vec()).collect(),
+                    rows: ingestor.locations.iter().map(|loc| loc.to_vec()).collect(),
                 },
             ),
             (
@@ -336,14 +359,6 @@ struct IngestableNode<'path> {
     is_error: bool,
     parent: Option<usize>,
     source: Option<String>,
-
-    // location
-    start_byte: usize,
-    start_row: usize,
-    start_column: usize,
-    end_byte: usize,
-    end_row: usize,
-    end_column: usize,
 }
 
 impl<'path> IngestableNode<'path> {
@@ -370,14 +385,6 @@ impl<'path> IngestableNode<'path> {
             is_error: node.is_error(),
             parent: node.parent().map(|node| node.id()),
             source,
-
-            // location
-            start_byte: range.start_byte,
-            start_row: range.start_point.row,
-            start_column: range.start_point.column,
-            end_byte: range.end_byte,
-            end_row: range.end_point.row,
-            end_column: range.end_point.column,
         })
     }
 
@@ -389,12 +396,6 @@ impl<'path> IngestableNode<'path> {
             json!(self.is_error),
             json!(self.parent),
             json!(self.source),
-            json!(self.start_byte),
-            json!(self.start_row),
-            json!(self.start_column),
-            json!(self.end_byte),
-            json!(self.end_row),
-            json!(self.end_column),
         ]
     }
 }
@@ -417,11 +418,49 @@ impl Debug for IngestableNode<'_> {
             builder.field("source", source);
         }
 
-        builder
-            .field("start", &(&self.start_row, &self.start_column))
-            .field("end", &(&self.end_row, &self.end_column));
-
         builder.finish()
+    }
+}
+
+#[derive(Debug)]
+struct IngestableNodeLocation<'path> {
+    path: &'path Path,
+    id: usize,
+    start_byte: usize,
+    start_row: usize,
+    start_column: usize,
+    end_byte: usize,
+    end_row: usize,
+    end_column: usize,
+}
+
+impl<'path> IngestableNodeLocation<'path> {
+    fn from(path: &'path Path, node: &Node) -> Self {
+        let range = node.range();
+
+        Self {
+            path,
+            id: node.id(),
+            start_byte: range.start_byte,
+            start_row: range.start_point.row,
+            start_column: range.start_point.column,
+            end_byte: range.end_byte,
+            end_row: range.end_point.row,
+            end_column: range.end_point.column,
+        }
+    }
+
+    fn to_vec(&self) -> Vec<Value> {
+        vec![
+            json!(self.path),
+            json!(self.id),
+            json!(self.start_byte),
+            json!(self.start_row),
+            json!(self.start_column),
+            json!(self.end_byte),
+            json!(self.end_row),
+            json!(self.end_column),
+        ]
     }
 }
 
