@@ -6,12 +6,12 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 mod compile_grammar;
-mod ingest;
+mod export;
 
 #[derive(Debug, Parser)]
 enum Command {
-    /// Turn a source tree into a Cozo database file
-    Ingest(ingest::IngestorConfig),
+    /// Turn source files into databases
+    Export(export::ExporterConfig),
 
     /// Compile a tree-sitter grammar to a shared library for future use
     CompileGrammar(compile_grammar::CompileGrammar),
@@ -21,7 +21,7 @@ impl Command {
     fn run(self) -> Result<()> {
         match self {
             Self::CompileGrammar(cg) => cg.run(),
-            Self::Ingest(ic) => ic.run(),
+            Self::Export(ec) => ec.run(),
         }
     }
 }

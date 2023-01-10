@@ -12,7 +12,7 @@ use tree_sitter::Node;
 use tree_sitter::{Language, Parser};
 
 #[derive(Debug, clap::Parser)]
-pub struct IngestorConfig {
+pub struct ExporterConfig {
     /// What format do you want the output in?
     output: Output,
 
@@ -33,7 +33,7 @@ pub struct IngestorConfig {
     #[arg(long, short('o'), required_if_eq("output", "sqlite"))]
     output_path: Option<PathBuf>,
 
-    /// The files to ingest
+    /// The files to export
     file: Vec<PathBuf>,
 }
 
@@ -81,7 +81,7 @@ static SCHEMA: &str = indoc::indoc! {"
 
 "};
 
-impl IngestorConfig {
+impl ExporterConfig {
     #[instrument]
     pub fn run(&self) -> Result<()> {
         // TODO: this is a little hacky, and probably means this big `run`
@@ -94,26 +94,26 @@ impl IngestorConfig {
             .language_for(&self.language)
             .wrap_err("could not find language")?;
 
-        let mut ingestor = Ingestor::new(language);
+        let mut exporter = Exporter::new(language);
 
         // TODO: this could be in parallel pretty easily. Buncha threads, each
-        // with an ingestor. Make a way to combine ingestors (appending the
+        // with an exporter. Make a way to combine exporters (appending the
         // interior lists should be fine) and we're good to go.
         for path in &self.file {
-            ingestor
-                .ingest(path)
+            exporter
+                .slurp(path)
                 .wrap_err_with(|| format!("could not process `{}`", path.display()))?;
         }
 
         tracing::info!(
-            nodes = ingestor.nodes.len(),
-            edges = ingestor.edges.len(),
+            nodes = exporter.nodes.len(),
+            edges = exporter.edges.len(),
             "parsed all files"
         );
 
         let db = self.empty_db().wrap_err("could not set up empty Cozo DB")?;
 
-        if let Err(err) = db.import_relations(ingestor.into()) {
+        if let Err(err) = db.import_relations(exporter.into()) {
             bail!("{err:#?}");
         };
 
@@ -229,14 +229,14 @@ impl IngestorConfig {
 }
 
 #[derive(Debug)]
-pub struct Ingestor<'path> {
+pub struct Exporter<'path> {
     language: Language,
-    nodes: Vec<IngestableNode<'path>>,
-    locations: Vec<IngestableNodeLocation<'path>>,
-    edges: Vec<IngestableEdge<'path>>,
+    nodes: Vec<ExportableNode<'path>>,
+    locations: Vec<ExportableNodeLocation<'path>>,
+    edges: Vec<ExportableEdge<'path>>,
 }
 
-impl<'path> Ingestor<'path> {
+impl<'path> Exporter<'path> {
     fn new(language: Language) -> Self {
         Self {
             language,
@@ -249,7 +249,7 @@ impl<'path> Ingestor<'path> {
     }
 
     #[instrument(skip(self))]
-    fn ingest(&mut self, path: &'path Path) -> Result<()> {
+    fn slurp(&mut self, path: &'path Path) -> Result<()> {
         let source = std::fs::read_to_string(path)
             .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
 
@@ -278,17 +278,17 @@ impl<'path> Ingestor<'path> {
             }
 
             self.nodes.push(
-                IngestableNode::from(path, &node, &source)
+                ExportableNode::from(path, &node, &source)
                     .wrap_err("could not ingest a syntax node")?,
             );
 
             self.locations
-                .push(IngestableNodeLocation::from(path, &node));
+                .push(ExportableNodeLocation::from(path, &node));
 
             for (i, child) in node.children(&mut cursor).enumerate() {
                 todo.push(child);
 
-                self.edges.push(IngestableEdge {
+                self.edges.push(ExportableEdge {
                     path,
                     parent: node.id(),
                     child: node.id(),
@@ -301,9 +301,9 @@ impl<'path> Ingestor<'path> {
     }
 }
 
-impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
-    #[instrument(skip(ingestor))]
-    fn from(ingestor: Ingestor<'_>) -> Self {
+impl From<Exporter<'_>> for BTreeMap<String, NamedRows> {
+    #[instrument(skip(exporter))]
+    fn from(exporter: Exporter<'_>) -> Self {
         Self::from([
             (
                 "nodes".into(),
@@ -313,10 +313,9 @@ impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
                         "id".into(),
                         "kind".into(),
                         "is_error".into(),
-                        "parent".into(),
                         "source".into(),
                     ],
-                    rows: ingestor.nodes.iter().map(|node| node.to_vec()).collect(),
+                    rows: exporter.nodes.iter().map(|node| node.to_vec()).collect(),
                 },
             ),
             (
@@ -332,7 +331,7 @@ impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
                         "end_row".into(),
                         "end_column".into(),
                     ],
-                    rows: ingestor.locations.iter().map(|loc| loc.to_vec()).collect(),
+                    rows: exporter.locations.iter().map(|loc| loc.to_vec()).collect(),
                 },
             ),
             (
@@ -344,14 +343,15 @@ impl From<Ingestor<'_>> for BTreeMap<String, NamedRows> {
                         "child".into(),
                         "field".into(),
                     ],
-                    rows: ingestor.edges.iter().map(|edge| edge.to_vec()).collect(),
+                    rows: exporter.edges.iter().map(|edge| edge.to_vec()).collect(),
                 },
             ),
         ])
     }
 }
 
-struct IngestableNode<'path> {
+#[derive(Debug)]
+struct ExportableNode<'path> {
     path: &'path Path,
     id: usize,
     kind: &'static str,
@@ -359,7 +359,7 @@ struct IngestableNode<'path> {
     source: Option<String>,
 }
 
-impl<'path> IngestableNode<'path> {
+impl<'path> ExportableNode<'path> {
     fn from(path: &'path Path, node: &Node, all_source: &str) -> Result<Self> {
         let range = node.range();
         let source = if node.is_named() {
@@ -396,26 +396,8 @@ impl<'path> IngestableNode<'path> {
     }
 }
 
-impl Debug for IngestableNode<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut builder = f.debug_struct("IngestableNode");
-
-        builder
-            .field("path", &self.path)
-            .field("id", &self.id)
-            .field("kind", &self.kind)
-            .field("is_error", &self.is_error);
-
-        if let Some(source) = &self.source {
-            builder.field("source", source);
-        }
-
-        builder.finish()
-    }
-}
-
 #[derive(Debug)]
-struct IngestableNodeLocation<'path> {
+struct ExportableNodeLocation<'path> {
     path: &'path Path,
     id: usize,
     start_byte: usize,
@@ -426,7 +408,7 @@ struct IngestableNodeLocation<'path> {
     end_column: usize,
 }
 
-impl<'path> IngestableNodeLocation<'path> {
+impl<'path> ExportableNodeLocation<'path> {
     fn from(path: &'path Path, node: &Node) -> Self {
         let range = node.range();
 
@@ -457,14 +439,14 @@ impl<'path> IngestableNodeLocation<'path> {
 }
 
 #[derive(Debug)]
-struct IngestableEdge<'path> {
+struct ExportableEdge<'path> {
     path: &'path Path,
     parent: usize,
     child: usize,
     field: Option<&'static str>,
 }
 
-impl IngestableEdge<'_> {
+impl ExportableEdge<'_> {
     fn to_vec(&self) -> Vec<Value> {
         vec![
             json!(self.path),
