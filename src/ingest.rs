@@ -50,8 +50,31 @@ pub enum Output {
     Sqlite,
 }
 
-static SCHEMA: &str =
-    "{:create nodes {path: String, id: Int => kind: String, is_error: Bool, parent: Int?, source: String?, start_byte: Int, start_row: Int, start_column: Int, end_byte: Int, end_row: Int, end_column: Int}}\n{:create edges { path: String, parent: Int, child: Int, field: String? }}";
+static SCHEMA: &str = indoc::indoc! {"
+    {:create nodes {
+        path: String,
+        id: Int
+        =>
+        kind: String,
+        is_error: Bool,
+        parent: Int?,
+        source: String?,
+        start_byte: Int,
+        start_row: Int,
+        start_column: Int,
+        end_byte: Int,
+        end_row: Int,
+        end_column: Int,
+    }}
+
+    {:create edges {
+        path: String,
+        parent: Int,
+        child: Int,
+        field: String?,
+    }}
+
+"};
 
 impl IngestorConfig {
     #[instrument]
