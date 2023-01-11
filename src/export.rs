@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use serde_json::json;
 use serde_json::value::Value;
 use std::collections::BTreeMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::io::Read;
 use std::io::Write;
@@ -20,7 +21,7 @@ pub struct ExporterConfig {
 
     /// Which languages should we include?
     #[arg(short('l'), long)]
-    language: String,
+    language: Vec<String>,
 
     /// Paths to look for language libraries. Use `tree-db compile-grammar` to
     /// make these.
@@ -120,7 +121,20 @@ impl ExporterConfig {
         }
     }
 
-    fn files(&self) -> Result<Vec<PathBuf>> {
+    fn files(&self) -> Result<(HashSet<String>, Vec<(String, PathBuf)>)> {
+        let mut types_builder = ignore::types::TypesBuilder::new();
+        types_builder.add_defaults();
+        if self.language.is_empty() {
+            types_builder.select("all");
+        } else {
+            for language in &self.language {
+                types_builder.select(&language);
+            }
+        }
+        let types = types_builder
+            .build()
+            .wrap_err("could not build filetype matcher")?;
+
         let mut builder = ignore::WalkBuilder::new(match self.file.get(0) {
             Some(path) => path,
             None => bail!("expected at least one path to search"),
@@ -128,31 +142,54 @@ impl ExporterConfig {
         self.file.iter().skip(1).for_each(|path| {
             builder.add(path);
         });
+        builder.types(types.clone());
 
-        let mut out = Vec::with_capacity(self.file.len());
+        let mut languages = HashSet::with_capacity(self.language.len().max(1));
+        let mut paths = Vec::with_capacity(self.file.len());
+
         for entry_res in builder.build() {
             let entry = entry_res?;
 
             if let Some(ft) = entry.file_type() {
-                if ft.is_file() {
-                    out.push(entry.into_path())
+                if !ft.is_file() {
+                    continue;
                 }
+            }
+
+            if let ignore::Match::Whitelist(glob) = types.matched(entry.path(), false) {
+                let file_type = match glob.file_type_def() {
+                    Some(ft) => ft,
+                    None => bail!("there's always supposed to be a file type def when the types matched a file path"),
+                };
+
+                languages.insert(file_type.name().to_string());
+                paths.push((file_type.name().to_string(), entry.into_path()));
+            } else {
+                bail!("got an entry which wasn't a directory and also didn't match any supplied file types. Is this a misconfiguration or a bug?")
             }
         }
 
-        Ok(out)
+        Ok((languages, paths))
     }
 
     fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
-        let language = self
-            .language_for(&self.language)
-            .wrap_err("could not find language")?;
+        let (mut language_names, files) = self.files().wrap_err("could not get files")?;
 
-        let files = self.files().wrap_err("could not get files")?;
+        let mut languages = Languages::with_capacity(self.include.clone(), language_names.len());
+        for language in language_names.drain() {
+            languages
+                .preload(language)
+                .wrap_err("could not load language")?;
+        }
 
         let mut exporters = files
             .par_iter()
-            .map(|path| {
+            .map(|(language_name, path)| {
+                let language = match languages.get(language_name) {
+                    Some(language) => language,
+                    None => bail!("could not get a language definition for `{language_name}`. Was it preloaded?"),
+                };
+
                 let mut exporter = FileExporter::new(language, path);
                 exporter
                     .slurp()
@@ -183,41 +220,82 @@ impl ExporterConfig {
         }
     }
 
-    fn language_for(&self, language_name: &str) -> Result<Language> {
-        let grammar_path = self
-            .find_grammar(language_name)
-            .wrap_err("could not find grammar")?;
-
-        let symbol_name = format!("tree_sitter_{language_name}");
-
-        let lib = unsafe { libloading::Library::new(&grammar_path) }.wrap_err_with(|| {
-            format!(
-                "could not open shared library ({}) for grammar",
-                grammar_path.display()
-            )
-        })?;
-
-        let language = unsafe {
-            let lang_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> = lib
-                .get(symbol_name.as_bytes())
-                .wrap_err_with(|| format!("could not load language function `{}`", symbol_name))?;
-
-            lang_fn()
+    fn empty_db(&self) -> Result<cozo::Db<cozo::MemStorage>> {
+        let db = match cozo::new_cozo_mem() {
+            Ok(db) => db,
+            // Cozo uses miette for error handling. It looks pretty nice, but
+            // it can't be used with color_eyre. Might be worth switching over;
+            // they both seem fine and I don't intend tree-db to ever be used
+            // as a library (if I did, I'd be doing things in this_error or
+            // something similar already.)
+            Err(err) => bail!("{err:#?}"),
         };
 
-        // HACK: this keeps the library's memory allocated for the duration of
-        // the program. This is necessary, since we've just called `lang` to get
-        // a reference to the grammar, and if the library gets unloaded before
-        // we parse then we'll get segfaults. An alternative eventually be to
-        // keep a mapping of language name to `libloading::Library` around.
-        //
-        // The docs for `std::mem::forget` say that a reference into the memory
-        // passed to it will not always be valid, but it looks Helix does this
-        // and it works fine. Diffsitter prefers to use `Box::leak` instead.
-        // We'll see what we see, I guess.
-        std::mem::forget(lib);
+        if let Err(err) = db.run_script(SCHEMA, BTreeMap::new()) {
+            bail!("{err:#?}")
+        }
 
-        Ok(language)
+        Ok(db)
+    }
+}
+
+#[derive(Debug)]
+struct Languages {
+    include: Vec<PathBuf>,
+    grammars: HashMap<String, libloading::Library>,
+    languages: HashMap<String, Language>,
+}
+
+impl Languages {
+    fn with_capacity(include: Vec<PathBuf>, size: usize) -> Self {
+        Self {
+            include,
+            grammars: HashMap::with_capacity(size),
+            languages: HashMap::with_capacity(size),
+        }
+    }
+
+    fn preload(&mut self, language_name: String) -> Result<()> {
+        let symbol_name = format!("tree_sitter_{language_name}");
+
+        let lib = match self.grammars.get(&language_name) {
+            Some(grammar) => grammar,
+            None => {
+                let grammar_path = self
+                    .find_grammar(&language_name)
+                    .wrap_err("could not find grammar")?;
+
+                let lib =
+                    unsafe { libloading::Library::new(&grammar_path) }.wrap_err_with(|| {
+                        format!(
+                            "could not open shared library ({}) for grammar",
+                            grammar_path.display()
+                        )
+                    })?;
+                self.grammars.insert(language_name.clone(), lib);
+                self.grammars.get(&language_name).unwrap()
+            }
+        };
+
+        if !self.languages.contains_key(&language_name) {
+            let language = unsafe {
+                let lang_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
+                    lib.get(symbol_name.as_bytes()).wrap_err_with(|| {
+                        format!("could not load language function `{}`", symbol_name)
+                    })?;
+
+                lang_fn()
+            };
+            self.languages.insert(language_name, language);
+        }
+
+        Ok(())
+    }
+
+    fn get(&self, language_name: &str) -> Option<Language> {
+        self.languages
+            .get(language_name)
+            .map(|language| language.clone())
     }
 
     fn find_grammar(&self, name: &str) -> Result<PathBuf> {
@@ -235,24 +313,6 @@ impl ExporterConfig {
         }
 
         bail!("could not find {search_name:?} in any included path")
-    }
-
-    fn empty_db(&self) -> Result<cozo::Db<cozo::MemStorage>> {
-        let db = match cozo::new_cozo_mem() {
-            Ok(db) => db,
-            // Cozo uses miette for error handling. It looks pretty nice, but
-            // it can't be used with color_eyre. Might be worth switching over;
-            // they both seem fine and I don't intend tree-db to ever be used
-            // as a library (if I did, I'd be doing things in this_error or
-            // something similar already.)
-            Err(err) => bail!("{err:#?}"),
-        };
-
-        if let Err(err) = db.run_script(SCHEMA, BTreeMap::new()) {
-            bail!("{err:#?}")
-        }
-
-        Ok(db)
     }
 }
 
