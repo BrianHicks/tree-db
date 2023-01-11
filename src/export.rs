@@ -48,6 +48,18 @@ pub struct ExporterConfig {
     /// Where to search for files. These can either be directories or files.
     #[arg(default_value = ".")]
     file: Vec<PathBuf>,
+
+    /// Include hidden files
+    #[arg(long)]
+    no_hidden: bool,
+
+    /// Parse and use `.ignore` files
+    #[arg(long)]
+    no_ignore: bool,
+
+    /// Parse and use ignore information from git
+    #[arg(long)]
+    no_git_ignore: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
@@ -160,7 +172,13 @@ impl ExporterConfig {
         self.file.iter().skip(1).for_each(|path| {
             builder.add(path);
         });
-        builder.types(types.clone());
+        builder
+            .types(types.clone())
+            .hidden(!self.no_hidden)
+            .ignore(!self.no_ignore)
+            .git_ignore(!self.no_git_ignore)
+            .git_global(!self.no_git_ignore)
+            .git_exclude(!self.no_git_ignore);
 
         let mut languages = HashSet::with_capacity(self.language.len().max(1));
         let mut paths = Vec::with_capacity(self.file.len());
