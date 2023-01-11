@@ -19,9 +19,13 @@ pub struct ExporterConfig {
     /// What format do you want the output in?
     output: Output,
 
-    /// Which languages should we include?
+    /// Which languages should we include? (Defaults to all languages whose extensions we know.)
     #[arg(short('l'), long)]
     language: Vec<String>,
+
+    /// Which languages should we avoid including?
+    #[arg(short('L'), long)]
+    no_language: Vec<String>,
 
     /// Paths to look for language libraries. Use `tree-db compile-grammar` to
     /// make these.
@@ -131,6 +135,10 @@ impl ExporterConfig {
                 types_builder.select(&language);
             }
         }
+        for language in &self.no_language {
+            types_builder.negate(&language);
+        }
+
         let types = types_builder
             .build()
             .wrap_err("could not build filetype matcher")?;
