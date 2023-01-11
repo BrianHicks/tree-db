@@ -27,6 +27,11 @@ pub struct ExporterConfig {
     #[arg(short('L'), long)]
     no_language: Vec<String>,
 
+    /// Define a custom language in the format `{name}:{glob}`. You can separate
+    /// multiple globs with a comma, like `ruby:*.rb,*.rake`.
+    #[arg(long)]
+    custom_language: Vec<String>,
+
     /// Paths to look for language libraries. Use `tree-db compile-grammar` to
     /// make these.
     #[arg(
@@ -137,6 +142,11 @@ impl ExporterConfig {
         }
         for language in &self.no_language {
             types_builder.negate(&language);
+        }
+        for language in &self.custom_language {
+            types_builder
+                .add_def(language)
+                .wrap_err("could not define custom language")?;
         }
 
         let types = types_builder
