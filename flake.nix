@@ -25,6 +25,7 @@
         devShell = pkgs.mkShell {
           packages = [
             pkgs.cargo
+            pkgs.cargo-edit
             pkgs.rustc
             pkgs.libiconv
             pkgs.rustfmt
