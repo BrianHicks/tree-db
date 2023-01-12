@@ -142,6 +142,7 @@ impl ExporterConfig {
         }
     }
 
+    #[instrument]
     fn files(&self) -> Result<(HashSet<String>, Vec<(String, PathBuf)>)> {
         let mut types_builder = ignore::types::TypesBuilder::new();
         types_builder.add_defaults();
@@ -208,6 +209,7 @@ impl ExporterConfig {
         Ok((languages, paths))
     }
 
+    #[instrument]
     fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
         let (mut language_names, files) = self.files().wrap_err("could not get files")?;
 
