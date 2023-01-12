@@ -120,7 +120,7 @@
         packages.tree-db = tree-db;
 
         # grammars
-        # packages.tree-sitter-c = grammar "c" "${inputs.tree-sitter-c}/src";
+        packages.tree-sitter-c = grammar "c" "${inputs.tree-sitter-c}/src";
         packages.tree-sitter-cpp = grammar "cpp" "${inputs.tree-sitter-cpp}/src";
         packages.tree-sitter-nix = grammar "nix" "${inputs.tree-sitter-nix}/src";
         packages.tree-sitter-elixir = grammar "elixir" "${inputs.tree-sitter-elixir}/src";
@@ -140,7 +140,7 @@
             packages.tree-db
 
             # grammars
-            # packages.tree-sitter-c
+            packages.tree-sitter-c
             packages.tree-sitter-cpp
             packages.tree-sitter-nix
             packages.tree-sitter-elixir
