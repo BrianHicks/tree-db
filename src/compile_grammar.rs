@@ -73,19 +73,25 @@ impl CompileGrammar {
             );
         }
 
-        let mut scanner_path = self.path.join("scanner.c");
-        if !scanner_path.exists() {
-            scanner_path.set_extension("cc");
-            if !scanner_path.exists() {
-                bail!(
-                    "scanner (`scanner.c` or `scanner.cc` at `{}`) does not exist",
-                    self.path.display()
-                );
+        let scanner_path = {
+            let mut candidate = self.path.join("scanner.c");
+            if candidate.exists() {
+                tracing::debug!(scanner_path = ?candidate, "found scanner");
+                Some(candidate)
+            } else {
+                candidate.set_extension("cc");
+                if candidate.exists() {
+                    tracing::info!("enabling C++ compilation");
+                    builder.cpp(true);
+
+                    tracing::debug!(scanner_path = ?candidate, "found scanner");
+                    Some(candidate)
+                } else {
+                    tracing::debug!("no scanner.c or scanner.cc exists");
+                    None
+                }
             }
-            builder.cpp(true);
-            tracing::info!("enabling C++ compilation");
-        }
-        tracing::debug!(?scanner_path, "found scanner");
+        };
 
         let mut command = builder
             .try_get_compiler()
@@ -97,7 +103,13 @@ impl CompileGrammar {
             // but we can compile both in one command. This is necessary in
             // situations where the source is read-only, and is more efficient
             // anyway.
-            command.arg(&parser_path).arg(&scanner_path).arg("-o").arg(
+            command.arg(&parser_path);
+
+            if let Some(scanner) = scanner_path {
+                command.arg(&scanner);
+            }
+
+            command.arg("-o").arg(
                 self.out_dir
                     .join(format!("{}.{}", self.name, DYLIB_EXTENSION)),
             );
