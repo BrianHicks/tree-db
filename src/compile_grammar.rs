@@ -45,6 +45,13 @@ impl CompileGrammar {
     pub fn run(&self) -> Result<()> {
         let mut builder = cc::Build::new();
 
+        if !self.out_dir.exists() {
+            bail!(
+                "output directory `{}` does not exist; I'm not even going to try to compile.",
+                self.out_dir.display()
+            );
+        }
+
         builder
             .opt_level(2)
             .cargo_metadata(false)
@@ -90,11 +97,10 @@ impl CompileGrammar {
             // but we can compile both in one command. This is necessary in
             // situations where the source is read-only, and is more efficient
             // anyway.
-            command
-                .arg(&parser_path)
-                .arg(&scanner_path)
-                .arg("-o")
-                .arg(format!("{}.{}", self.name, DYLIB_EXTENSION));
+            command.arg(&parser_path).arg(&scanner_path).arg("-o").arg(
+                self.out_dir
+                    .join(format!("{}.{}", self.name, DYLIB_EXTENSION)),
+            );
 
             tracing::info!(?command, "executing");
 
