@@ -71,6 +71,7 @@ impl Loader {
 
         for path in &self.include {
             let candidate = path.join(&search_name);
+            tracing::debug!(name, ?candidate, "looking for grammar");
             if candidate.exists() {
                 return Ok(candidate);
             }
