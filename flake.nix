@@ -29,11 +29,25 @@
         tree-db = naersk.buildPackage {
           src = ./.;
         };
+
+        grammar = name: src: pkgs.stdenv.mkDerivation {
+          name = "tree-sitter-${name}";
+          src = src;
+
+          buildPhase = ''
+            mkdir -p $out/lib/tree-db
+            ${tree-db}/bin/tree-db compile-grammar --out-dir $out/lib/tree-db tree-sitter-${name} .
+          '';
+          installPhase = "true";
+        };
       in
       rec {
         formatter = pkgs.nixpkgs-fmt;
 
         packages.tree-db = tree-db;
+
+        # grammars
+        packages.tree-sitter-rust = grammar "rust" "${inputs.tree-sitter-rust}/src";
 
         devShell = pkgs.mkShell {
           packages = [
