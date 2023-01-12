@@ -1,10 +1,11 @@
+use crate::loader::Loader;
 use color_eyre::eyre::{bail, Result, WrapErr};
 use cozo::NamedRows;
 use rayon::prelude::*;
 use serde_json::json;
 use serde_json::value::Value;
 use std::collections::BTreeMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::io::Read;
 use std::io::Write;
@@ -213,9 +214,9 @@ impl ExporterConfig {
     fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
         let (mut language_names, files) = self.files().wrap_err("could not get files")?;
 
-        let mut languages = Languages::with_capacity(self.include.clone(), language_names.len());
+        let mut loader = Loader::with_capacity(self.include.clone(), language_names.len());
         for language in language_names.drain() {
-            languages
+            loader
                 .preload(language)
                 .wrap_err("could not load language")?;
         }
@@ -223,7 +224,7 @@ impl ExporterConfig {
         let mut exporters = files
             .par_iter()
             .map(|(language_name, path)| {
-                let language = match languages.get(language_name) {
+                let language = match loader.get(language_name) {
                     Some(language) => language,
                     None => bail!("could not get a language definition for `{language_name}`. Was it preloaded?"),
                 };
@@ -274,83 +275,6 @@ impl ExporterConfig {
         }
 
         Ok(db)
-    }
-}
-
-#[derive(Debug)]
-struct Languages {
-    include: Vec<PathBuf>,
-    grammars: HashMap<String, libloading::Library>,
-    languages: HashMap<String, Language>,
-}
-
-impl Languages {
-    fn with_capacity(include: Vec<PathBuf>, size: usize) -> Self {
-        Self {
-            include,
-            grammars: HashMap::with_capacity(size),
-            languages: HashMap::with_capacity(size),
-        }
-    }
-
-    fn preload(&mut self, language_name: String) -> Result<()> {
-        let symbol_name = format!("tree_sitter_{language_name}");
-
-        let lib = match self.grammars.get(&language_name) {
-            Some(grammar) => grammar,
-            None => {
-                let grammar_path = self
-                    .find_grammar(&language_name)
-                    .wrap_err("could not find grammar")?;
-
-                let lib =
-                    unsafe { libloading::Library::new(&grammar_path) }.wrap_err_with(|| {
-                        format!(
-                            "could not open shared library ({}) for grammar",
-                            grammar_path.display()
-                        )
-                    })?;
-                self.grammars.insert(language_name.clone(), lib);
-                self.grammars.get(&language_name).unwrap()
-            }
-        };
-
-        if !self.languages.contains_key(&language_name) {
-            let language = unsafe {
-                let lang_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
-                    lib.get(symbol_name.as_bytes()).wrap_err_with(|| {
-                        format!("could not load language function `{}`", symbol_name)
-                    })?;
-
-                lang_fn()
-            };
-            self.languages.insert(language_name, language);
-        }
-
-        Ok(())
-    }
-
-    fn get(&self, language_name: &str) -> Option<Language> {
-        self.languages
-            .get(language_name)
-            .map(|language| language.clone())
-    }
-
-    fn find_grammar(&self, name: &str) -> Result<PathBuf> {
-        let search_name = PathBuf::from(format!(
-            "tree-sitter-{}.{}",
-            name,
-            crate::compile_grammar::DYLIB_EXTENSION
-        ));
-
-        for path in &self.include {
-            let candidate = path.join(&search_name);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-        }
-
-        bail!("could not find {search_name:?} in any included path")
     }
 }
 

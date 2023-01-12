@@ -7,6 +7,7 @@ use tracing_subscriber::EnvFilter;
 
 mod compile_grammar;
 mod export;
+mod loader;
 
 #[derive(Debug, Parser)]
 enum Command {
