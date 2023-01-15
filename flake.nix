@@ -132,7 +132,7 @@
         packages.tree-sitter-python = grammar "python" "${inputs.tree-sitter-python}/src";
         packages.tree-sitter-ruby = grammar "ruby" "${inputs.tree-sitter-ruby}/src";
         packages.tree-sitter-rust = grammar "rust" "${inputs.tree-sitter-rust}/src";
-        # packages.tree-sitter-typescript = grammar "typescript" "${inputs.tree-sitter-typescript}/typescript/src";
+        packages.tree-sitter-typescript = grammar "typescript" "${inputs.tree-sitter-typescript}/typescript/src";
 
         packages.tree-db-full = pkgs.symlinkJoin {
           name = "tree-db";
