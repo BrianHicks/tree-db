@@ -215,7 +215,7 @@ impl ExporterConfig {
 
     #[instrument(skip(data))]
     fn write_csv(path: &Path, data: &NamedRows) -> Result<()> {
-        let nodes_file = std::fs::File::create(&path)?;
+        let nodes_file = std::fs::File::create(path)?;
 
         let mut csv_writer = csv::Writer::from_writer(nodes_file);
         csv_writer
