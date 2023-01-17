@@ -68,7 +68,7 @@ pub enum Output {
     /// Cozo relations, as JSON
     CozoJson,
 
-    /// The Cozo schema that we're assuming, as a query you can run to start
+    /// The Cozo schema that we're assuming as a query you can run to start
     /// your own Cozo database.
     CozoSchema,
 
