@@ -151,11 +151,11 @@ impl ExporterConfig {
             types_builder.select("all");
         } else {
             for language in &self.language {
-                types_builder.select(&language);
+                types_builder.select(language);
             }
         }
         for language in &self.no_language {
-            types_builder.negate(&language);
+            types_builder.negate(language);
         }
         for language in &self.custom_language {
             types_builder
@@ -352,7 +352,7 @@ impl<'path> FileExporter<'path> {
     }
 
     fn read_source(&mut self) -> Result<()> {
-        let mut file = std::fs::File::open(&self.path)
+        let mut file = std::fs::File::open(self.path)
             .wrap_err_with(|| format!("could not open `{}`", self.path.display()))?;
 
         file.read_to_string(&mut self.source)
