@@ -213,22 +213,6 @@ impl ExporterConfig {
         }
     }
 
-    #[instrument(skip(data))]
-    fn write_csv(path: &Path, data: &NamedRows) -> Result<()> {
-        let nodes_file = std::fs::File::create(path)?;
-
-        let mut csv_writer = csv::Writer::from_writer(nodes_file);
-        csv_writer
-            .write_record(&data.headers)
-            .wrap_err("could not write header")?;
-
-        for row in &data.rows {
-            csv_writer.serialize(row).wrap_err("could not write row")?;
-        }
-
-        Ok(())
-    }
-
     #[instrument]
     fn files(&self) -> Result<LanguagesAndPaths> {
         let mut types_builder = ignore::types::TypesBuilder::new();
@@ -341,6 +325,23 @@ impl ExporterConfig {
         Ok(db)
     }
 
+    #[instrument(skip(data))]
+    fn write_csv(path: &Path, data: &NamedRows) -> Result<()> {
+        let nodes_file = std::fs::File::create(path)?;
+
+        let mut csv_writer = csv::Writer::from_writer(nodes_file);
+        csv_writer
+            .write_record(&data.headers)
+            .wrap_err("could not write header")?;
+
+        for row in &data.rows {
+            csv_writer.serialize(row).wrap_err("could not write row")?;
+        }
+
+        Ok(())
+    }
+
+    #[instrument(skip(data))]
     fn write(&self, data: &str) -> Result<()> {
         match &self.output_path {
             None => std::io::stdout()
