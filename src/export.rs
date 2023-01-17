@@ -444,7 +444,7 @@ struct ExportableNode<'path> {
 impl<'path> ExportableNode<'path> {
     fn from(path: &'path Path, node: &Node) -> Self {
         let range = node.range();
-        let source_bytes = if node.is_named() {
+        let source_bytes = if node.is_named() && node.child_count() == 0 {
             Some((range.start_byte, range.end_byte))
         } else {
             None
