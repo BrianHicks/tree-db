@@ -103,57 +103,116 @@
           src = ./.;
         };
 
-        grammar = name: src: pkgs.stdenv.mkDerivation {
+        grammar = { name, src, path ? "src" }: pkgs.stdenv.mkDerivation {
           name = "tree-sitter-${name}";
-          src = src;
+          inherit src;
 
           buildPhase = ''
+            BINARY=${pkgs.clang}/bin/clang
+            ARGS=(-O2 -ffunction-sections -fdata-sections -fPIC -shared -fno-exceptions -I ${path})
+
+            if test -f ${path}/parser.c; then
+              ARGS+=(${path}/parser.c)
+            fi
+
+            if test -f ${path}/scanner.c; then
+              ARGS+=(${path}/scanner.c)
+            elif test -f ${path}/scanner.cc; then
+              ARGS+=(${path}/scanner.cc)
+              BINARY=${pkgs.clang}/bin/clang++
+            fi
+
+            ARGS+=(-o $out/lib/tree-db/tree-sitter-${name}.${if pkgs.stdenv.isDarwin then "dylib" else "so"})
+
             mkdir -p $out/lib/tree-db
-            ${tree-db}/bin/tree-db compile-grammar --out-dir $out/lib/tree-db tree-sitter-${name} .
+            $BINARY ''${ARGS[@]}
           '';
+
           installPhase = "true";
         };
+
+        grammars = [
+          (grammar {
+            name = "c";
+            src = inputs.tree-sitter-c;
+          })
+          (grammar {
+            name = "cpp";
+            src = inputs.tree-sitter-cpp;
+          })
+          (grammar {
+            name = "nix";
+            src = inputs.tree-sitter-nix;
+          })
+          (grammar {
+            name = "elixir";
+            src = inputs.tree-sitter-elixir;
+          })
+          (grammar {
+            name = "elm";
+            src = inputs.tree-sitter-elm;
+          })
+          (grammar {
+            name = "haskell";
+            src = inputs.tree-sitter-haskell;
+          })
+          (grammar {
+            name = "javascript";
+            src = inputs.tree-sitter-javascript;
+          })
+          (grammar {
+            name = "markdown";
+            src = inputs.tree-sitter-markdown;
+          })
+          (grammar {
+            name = "php";
+            src = inputs.tree-sitter-php;
+          })
+          (grammar {
+            name = "python";
+            src = inputs.tree-sitter-python;
+          })
+          (grammar {
+            name = "ruby";
+            src = inputs.tree-sitter-ruby;
+          })
+          (grammar {
+            name = "rust";
+            src = inputs.tree-sitter-rust;
+          })
+          (grammar {
+            name = "typescript";
+            src = inputs.tree-sitter-rust;
+            path = "typescript/src";
+          })
+        ];
       in
       rec {
         formatter = pkgs.nixpkgs-fmt;
 
+        lib.tree-db-with-grammars = { grammars, tree-db ? packages.tree-db, name ? "tree-db-custom" }: pkgs.stdenv.mkDerivation {
+          inherit name;
+          src = builtins.filterSource (_: _: false) ./.;
+
+          buildInputs = [ pkgs.makeWrapper ];
+          buildPhase = ''
+            mkdir -p $out/bin
+
+            makeWrapper ${tree-db}/bin/tree-db $out/bin/tree-db \
+              --set TREE_DB_LANGUAGE_SEARCH_PATH ${pkgs.symlinkJoin { name = "${name}-grammars"; paths = grammars; }}/lib/tree-db
+          '';
+
+          installPhase = "true";
+        };
+
         packages.tree-db = tree-db;
 
-        # grammars
-        packages.tree-sitter-c = grammar "c" "${inputs.tree-sitter-c}/src";
-        packages.tree-sitter-cpp = grammar "cpp" "${inputs.tree-sitter-cpp}/src";
-        packages.tree-sitter-nix = grammar "nix" "${inputs.tree-sitter-nix}/src";
-        packages.tree-sitter-elixir = grammar "elixir" "${inputs.tree-sitter-elixir}/src";
-        packages.tree-sitter-elm = grammar "elm" "${inputs.tree-sitter-elm}/src";
-        packages.tree-sitter-haskell = grammar "haskell" "${inputs.tree-sitter-haskell}/src";
-        packages.tree-sitter-javascript = grammar "javascript" "${inputs.tree-sitter-javascript}/src";
-        packages.tree-sitter-markdown = grammar "markdown" "${inputs.tree-sitter-markdown}/src";
-        packages.tree-sitter-php = grammar "php" "${inputs.tree-sitter-php}/src";
-        packages.tree-sitter-python = grammar "python" "${inputs.tree-sitter-python}/src";
-        packages.tree-sitter-ruby = grammar "ruby" "${inputs.tree-sitter-ruby}/src";
-        packages.tree-sitter-rust = grammar "rust" "${inputs.tree-sitter-rust}/src";
-        packages.tree-sitter-typescript = grammar "typescript" "${inputs.tree-sitter-typescript}/typescript/src";
+        packages.grammars =
+          (builtins.listToAttrs (builtins.map (drv: { name = drv.name; value = drv; }) grammars));
 
-        packages.tree-db-full = pkgs.symlinkJoin {
-          name = "tree-db";
-          paths = [
-            packages.tree-db
-
-            # grammars
-            packages.tree-sitter-c
-            packages.tree-sitter-cpp
-            packages.tree-sitter-nix
-            packages.tree-sitter-elixir
-            packages.tree-sitter-elm
-            packages.tree-sitter-haskell
-            packages.tree-sitter-javascript
-            packages.tree-sitter-markdown
-            packages.tree-sitter-php
-            packages.tree-sitter-python
-            packages.tree-sitter-ruby
-            packages.tree-sitter-rust
-            # packages.tree-sitter-typescript
-          ];
+        packages.tree-db-full = lib.tree-db-with-grammars {
+          name = "tree-db-full";
+          grammars = builtins.attrValues packages.grammars;
         };
 
         devShell = pkgs.mkShell {
