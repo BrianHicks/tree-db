@@ -64,7 +64,6 @@ pub struct ExporterConfig {
     no_git_ignore: bool,
 }
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum Output {
     /// Cozo relations, as JSON
