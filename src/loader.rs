@@ -64,9 +64,7 @@ impl Loader {
     }
 
     pub fn get(&self, language_name: &str) -> Option<Language> {
-        self.languages
-            .get(language_name)
-            .map(|language| language.clone())
+        self.languages.get(language_name).copied()
     }
 
     fn find_grammar(&self, name: &str) -> Result<PathBuf> {
