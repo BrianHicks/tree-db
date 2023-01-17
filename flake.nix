@@ -214,6 +214,7 @@
           name = "tree-db-full";
           grammars = builtins.attrValues packages.grammars;
         };
+        defaultPackage = packages.tree-db-full;
 
         devShell = pkgs.mkShell {
           packages = [
