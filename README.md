@@ -2,15 +2,17 @@
 
 Transforms a project's source AST into a database you can query!
 
-## Installation
+## Building
 
-Use nix to install:
+1. Have the [Nix](https://nixos.org/) package manager installed (NixOS not required.)
+2. Check out the source
+3. Run `nix build .#tree-db-full`
 
-```
-nix-env -if https://github.com/BrianHicks/tree-grepper/archive/refs/heads/main.tar.gz
-```
+If you just want grammars, you can build them like `nix build .#grammars.tree-sitter-rust`.
+Look in `flake.nix` for a full list.
 
-If you have a Rust toolchain set up, you can also clone this repo and run `cargo build`.
+If you want a development environment, type `nix develop`.
+I recommend having `direnv` installed for this, as there's instructions for easy shells in the repo already.
 
 ## Schema
 
