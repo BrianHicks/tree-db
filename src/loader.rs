@@ -1,4 +1,5 @@
 use color_eyre::eyre::{bail, Result, WrapErr};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tree_sitter::Language;
@@ -48,7 +49,7 @@ impl Loader {
             }
         };
 
-        if !self.languages.contains_key(&language_name) {
+        if let Entry::Vacant(entry) = self.languages.entry(language_name) {
             let language = unsafe {
                 let lang_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
                     lib.get(symbol_name.as_bytes()).wrap_err_with(|| {
@@ -57,7 +58,7 @@ impl Loader {
 
                 lang_fn()
             };
-            self.languages.insert(language_name, language);
+            entry.insert(language);
         }
 
         Ok(())
