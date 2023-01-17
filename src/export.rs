@@ -108,6 +108,16 @@ static SCHEMA: &str = indoc::indoc! {"
 
 "};
 
+struct LanguagesAndPaths {
+    languages: HashSet<String>,
+    paths: Vec<LanguageAndPath>,
+}
+
+struct LanguageAndPath {
+    language: String,
+    path: PathBuf,
+}
+
 impl ExporterConfig {
     #[instrument]
     pub fn run(&self) -> Result<()> {
@@ -145,7 +155,7 @@ impl ExporterConfig {
     }
 
     #[instrument]
-    fn files(&self) -> Result<(HashSet<String>, Vec<(String, PathBuf)>)> {
+    fn files(&self) -> Result<LanguagesAndPaths> {
         let mut types_builder = ignore::types::TypesBuilder::new();
         types_builder.add_defaults();
         if self.language.is_empty() {
@@ -202,29 +212,35 @@ impl ExporterConfig {
                 };
 
                 languages.insert(file_type.name().to_string());
-                paths.push((file_type.name().to_string(), entry.into_path()));
+                paths.push(LanguageAndPath {
+                    language: file_type.name().to_string(),
+                    path: entry.into_path(),
+                });
             } else {
                 bail!("got an entry which wasn't a directory and also didn't match any supplied file types. Is this a misconfiguration or a bug?")
             }
         }
 
-        Ok((languages, paths))
+        Ok(LanguagesAndPaths { languages, paths })
     }
 
     #[instrument]
     fn slurp_all(&self) -> Result<cozo::Db<cozo::MemStorage>> {
-        let (mut language_names, files) = self.files().wrap_err("could not get files")?;
+        let LanguagesAndPaths {
+            mut languages,
+            paths,
+        } = self.files().wrap_err("could not get files")?;
 
-        let mut loader = Loader::with_capacity(self.include.clone(), language_names.len());
-        for language in language_names.drain() {
+        let mut loader = Loader::with_capacity(self.include.clone(), languages.len());
+        for language in languages.drain() {
             loader
                 .preload(language)
                 .wrap_err("could not load language")?;
         }
 
-        let mut exporters = files
+        let mut exporters = paths
             .par_iter()
-            .map(|(language_name, path)| {
+            .map(|LanguageAndPath { language: language_name, path }| {
                 let language = match loader.get(language_name) {
                     Some(language) => language,
                     None => bail!("could not get a language definition for `{language_name}`. Was it preloaded?"),
