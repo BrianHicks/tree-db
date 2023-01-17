@@ -4,16 +4,12 @@ use cozo::NamedRows;
 use rayon::prelude::*;
 use serde_json::json;
 use serde_json::value::Value;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
-use std::io::Read;
-use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use tracing::instrument;
-use tree_sitter::Node;
-use tree_sitter::{Language, Parser};
+use tree_sitter::{Language, Node, Parser};
 
 #[derive(Debug, clap::Parser)]
 pub struct ExporterConfig {
