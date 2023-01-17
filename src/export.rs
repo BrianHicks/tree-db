@@ -66,7 +66,7 @@ pub struct ExporterConfig {
 #[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum Output {
     /// Cozo relations, as JSON
-    Cozo,
+    CozoJson,
 
     /// The Cozo schema that we're assuming, as a query you can run to start
     /// your own Cozo database.
@@ -111,7 +111,7 @@ impl ExporterConfig {
     #[instrument]
     pub fn run(&self) -> Result<()> {
         match self.output {
-            Output::Cozo => {
+            Output::CozoJson => {
                 let db = self.slurp_all().wrap_err("failed to create database")?;
 
                 match db.export_relations(vec!["nodes", "node_locations", "edges"].drain(..)) {
