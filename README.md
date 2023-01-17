@@ -58,9 +58,6 @@ Here are the big things that might change:
 
 1. The schema that `tree-db` generates might change once I've used it in a couple of places.
 1. I'm not sure where it should live (GitHub might only be temporary)
-1. It might not make sense to have a `compile-grammar` subcommand.
-   It might be more of a packaging task than a runtime one, but `tree-db` does require building shared libraries, so it might be good to include?
-   Not sure yet.
 
 ## Contributing
 

@@ -1,31 +1,11 @@
 use clap::Parser;
-use color_eyre::eyre::Result;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-mod compile_grammar;
 mod export;
 mod loader;
-
-#[derive(Debug, Parser)]
-enum Command {
-    /// Turn source files into databases
-    Export(export::ExporterConfig),
-
-    /// Compile a tree-sitter grammar to a shared library for future use
-    CompileGrammar(compile_grammar::CompileGrammar),
-}
-
-impl Command {
-    fn run(self) -> Result<()> {
-        match self {
-            Self::CompileGrammar(cg) => cg.run(),
-            Self::Export(ec) => ec.run(),
-        }
-    }
-}
 
 fn main() {
     let subscriber = tracing_subscriber::Registry::default()
@@ -47,7 +27,7 @@ fn main() {
 
     color_eyre::install().expect("could not initialize error handling");
 
-    let opts = Command::parse();
+    let opts = export::ExporterConfig::parse();
 
     if let Err(err) = opts.run() {
         eprintln!("{err:?}");

@@ -3,6 +3,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tree_sitter::Language;
 
+// TODO: Windows support should be possible, but I'm not sure how to do it right now
+#[cfg(all(unix, not(target_os = "macos")))]
+pub static DYLIB_EXTENSION: &str = "so";
+
+#[cfg(target_os = "macos")]
+pub static DYLIB_EXTENSION: &str = "dylib";
+
 #[derive(Debug)]
 pub struct Loader {
     include: Vec<PathBuf>,
@@ -63,11 +70,7 @@ impl Loader {
     }
 
     fn find_grammar(&self, name: &str) -> Result<PathBuf> {
-        let search_name = PathBuf::from(format!(
-            "tree-sitter-{}.{}",
-            name,
-            crate::compile_grammar::DYLIB_EXTENSION
-        ));
+        let search_name = PathBuf::from(format!("tree-sitter-{}.{}", name, DYLIB_EXTENSION));
 
         for path in &self.include {
             let candidate = path.join(&search_name);
