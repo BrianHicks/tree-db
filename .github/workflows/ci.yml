@@ -38,4 +38,4 @@ jobs:
       #     name: tree-db
       #     skipPush: true
 
-      - run: nix-shell --pure --run 'rustfmt --check $(find . -name "*.rs" -not -ipath "*vendor*" -not -ipath "*target*")'
+      - run: nix develop --command cargo fmt --check
