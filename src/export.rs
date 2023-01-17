@@ -1,5 +1,5 @@
 use crate::loader::Loader;
-use color_eyre::eyre::{bail, Result, WrapErr};
+use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use cozo::NamedRows;
 use rayon::prelude::*;
 use serde_json::json;
@@ -39,7 +39,12 @@ pub struct ExporterConfig {
     )]
     include: Vec<PathBuf>,
 
-    #[arg(long, short('o'), required_if_eq("output", "cozo-sqlite"))]
+    #[arg(
+        long,
+        short('o'),
+        required_if_eq("output", "cozo-sqlite"),
+        required_if_eq("output", "csv")
+    )]
     output_path: Option<PathBuf>,
 
     /// Where to search for files. These can either be directories or files.
@@ -71,6 +76,10 @@ pub enum Output {
 
     /// A SQLite database, as a file
     CozoSqlite,
+
+    /// A set of CSVs. When using this, the path specified in -o/--output-path
+    /// must be a directory.
+    Csv,
 }
 
 static SCHEMA: &str = indoc::indoc! {"
@@ -147,7 +156,78 @@ impl ExporterConfig {
                 Ok(()) => Ok(()),
                 Err(err) => bail!("{err:#?}"),
             },
+            Output::Csv => {
+                let output_path = self
+                    .output_path
+                    .as_ref()
+                    .ok_or_else(|| eyre!("output_path is required, but should have been validated by clap. Is there a misconfiguration or bug?"))?;
+
+                if !output_path
+                    .metadata()
+                    .wrap_err_with(|| {
+                        format!("could not get metadata for `{}`", output_path.display())
+                    })?
+                    .file_type()
+                    .is_dir()
+                {
+                    bail!(
+                        "For CSV output, we need the output path (`{}`) to be a directory.",
+                        output_path.display()
+                    );
+                }
+
+                // TODO: we wouldn't necessarily have to use cozo for this!
+                let db = self
+                    .slurp_all()
+                    .wrap_err("could not load source files to database")?;
+
+                let relations =
+                    match db.export_relations(vec!["nodes", "node_locations", "edges"].drain(..)) {
+                        Ok(relations) => relations,
+                        Err(err) => bail!("{err:#?}"),
+                    };
+
+                Self::write_csv(
+                    &output_path.join("nodes.csv"),
+                    relations
+                        .get("nodes")
+                        .expect("nodes should be present in the export above"),
+                )
+                .wrap_err("could not export `nodes.csv`")?;
+
+                Self::write_csv(
+                    &output_path.join("node_locations.csv"),
+                    relations
+                        .get("node_locations")
+                        .expect("node_locations should be present in the export above"),
+                )
+                .wrap_err("could not export `node_locations.csv`")?;
+
+                Self::write_csv(
+                    &output_path.join("edges.csv"),
+                    relations
+                        .get("edges")
+                        .expect("edges should be present in the export above"),
+                )
+                .wrap_err("could not export `edges.csv`")
+            }
         }
+    }
+
+    #[instrument(skip(data))]
+    fn write_csv(path: &Path, data: &NamedRows) -> Result<()> {
+        let nodes_file = std::fs::File::create(&path)?;
+
+        let mut csv_writer = csv::Writer::from_writer(nodes_file);
+        csv_writer
+            .write_record(&data.headers)
+            .wrap_err("could not write header")?;
+
+        for row in &data.rows {
+            csv_writer.serialize(row).wrap_err("could not write row")?;
+        }
+
+        Ok(())
     }
 
     #[instrument]
