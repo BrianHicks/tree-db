@@ -397,7 +397,7 @@ impl<'path> FileExporter<'path> {
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(path = ?self.path))]
     fn slurp(&mut self) -> Result<()> {
         self.read_source().wrap_err("could not read source")?;
 
