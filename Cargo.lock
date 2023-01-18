@@ -1921,6 +1921,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "cozo",
+ "csv",
  "guess_host_triple",
  "ignore",
  "indoc",
